@@ -1,8 +1,10 @@
 package plugin
 
 import (
+	"bytes"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"os"
 	"os/exec"
 	"strings"
@@ -86,20 +88,58 @@ func (p Plugin) Exec() error {
 		cmdArgs = append(cmdArgs, "-v")
 	}
 
+	var out bytes.Buffer
 	cmd := exec.Command("act", cmdArgs...)
-	cmd.Stdout = os.Stdout
+	cmd.Stdout = &out
 	cmd.Stderr = os.Stderr
-	trace(cmd)
 
 	err := cmd.Run()
 	if err != nil {
 		return err
 	}
+
+	trace(&out)
+
 	return nil
 }
 
 // trace writes each command to stdout with the command wrapped in an xml
 // tag so that it can be extracted and displayed in the logs.
-func trace(cmd *exec.Cmd) {
-	fmt.Fprintf(os.Stdout, "+ %s\n", strings.Join(cmd.Args, " "))
+func trace(out *bytes.Buffer) {
+	outputStr := out.String()
+	fmt.Println(outputStr)
+
+	lines := strings.Split(outputStr, "\n")
+
+	// Prepare a map to hold the output values
+	outputValues := make(map[string]string)
+
+	// Iterate over lines to find ::set-output:: values
+	for _, line := range lines {
+		if strings.Contains(line, "::set-output::") {
+			// Process line to extract set-output key and value
+			parts := strings.Split(line, "::set-output::")
+			if len(parts) > 1 {
+				keyValue := strings.Split(parts[1], "=")
+				if len(keyValue) > 1 {
+					outputValues[keyValue[0]] = keyValue[1]
+				}
+			}
+		}
+	}
+
+	// Prepare the output string in key=value format
+	outputString := ""
+	for key, value := range outputValues {
+		outputString += fmt.Sprintf("%s=%s\n", key, value)
+	}
+
+	// Get the output file from the DRONE_OUTPUT environment variable
+	outputFile := os.Getenv("DRONE_OUTPUT")
+
+	// Write the output values to the output file
+	err := os.WriteFile(outputFile, []byte(outputString), 0644)
+	if err != nil {
+		log.Fatal(err)
+	}
 }
