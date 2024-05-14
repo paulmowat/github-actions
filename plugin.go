@@ -1,8 +1,10 @@
 package plugin
 
 import (
+	"bufio"
 	"bytes"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"os"
@@ -88,36 +90,51 @@ func (p Plugin) Exec() error {
 		cmdArgs = append(cmdArgs, "-v")
 	}
 
-	var out bytes.Buffer
 	cmd := exec.Command("act", cmdArgs...)
-	cmd.Stdout = &out
+	// cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+	trace(cmd)
 
-	err := cmd.Run()
+	var buf bytes.Buffer
+	multi := io.MultiWriter(os.Stdout, &buf)
+	cmd.Stdout = multi
+
+	err := cmd.Start()
 	if err != nil {
 		return err
 	}
 
-	trace(&out)
+	err = cmd.Wait()
+	if err != nil {
+		return err
+	}
+
+	// Call processOutput to process the stdout
+
+	stdout := strings.NewReader(buf.String())
+	processOutput(stdout)
 
 	return nil
 }
 
 // trace writes each command to stdout with the command wrapped in an xml
 // tag so that it can be extracted and displayed in the logs.
-func trace(out *bytes.Buffer) {
-	outputStr := out.String()
-	fmt.Println(outputStr)
+func trace(cmd *exec.Cmd) {
+	fmt.Fprintf(os.Stdout, "+ %s\n", strings.Join(cmd.Args, " "))
+}
 
-	lines := strings.Split(outputStr, "\n")
-
-	// Prepare a map to hold the output values
+// processOutput reads the stdout, detects the ::set-output:: lines, and writes them to the file specified by the DRONE_OUTPUT environment variable.
+func processOutput(out io.Reader) {
+	scanner := bufio.NewScanner(out)
 	outputValues := make(map[string]string)
 
-	// Iterate over lines to find ::set-output:: values
-	for _, line := range lines {
+	// Scan the stdout line by line
+	for scanner.Scan() {
+		line := scanner.Text()
+
+		// Check if the line contains ::set-output::
 		if strings.Contains(line, "::set-output::") {
-			// Process line to extract set-output key and value
+			// Extract the key and value
 			parts := strings.Split(line, "::set-output::")
 			if len(parts) > 1 {
 				keyValue := strings.Split(parts[1], "=")
