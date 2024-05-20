@@ -91,13 +91,12 @@ func (p Plugin) Exec() error {
 	}
 
 	cmd := exec.Command("act", cmdArgs...)
-	// cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	trace(cmd)
-
 	var buf bytes.Buffer
 	multi := io.MultiWriter(os.Stdout, &buf)
 	cmd.Stdout = multi
+    cmd.Stderr = os.Stderr
+
+	trace(cmd)
 
 	err := cmd.Start()
 	if err != nil {
@@ -110,7 +109,6 @@ func (p Plugin) Exec() error {
 	}
 
 	// Call processOutput to process the stdout
-
 	stdout := strings.NewReader(buf.String())
 	processOutput(stdout)
 
@@ -123,7 +121,8 @@ func trace(cmd *exec.Cmd) {
 	fmt.Fprintf(os.Stdout, "+ %s\n", strings.Join(cmd.Args, " "))
 }
 
-// processOutput reads the stdout, detects the ::set-output:: lines, and writes them to the file specified by the DRONE_OUTPUT environment variable.
+// processOutput reads the stdout, detects the ::set-output:: lines, and writes them to the file specified
+// by the DRONE_OUTPUT environment variable.
 func processOutput(out io.Reader) {
 	scanner := bufio.NewScanner(out)
 	outputValues := make(map[string]string)
@@ -134,7 +133,7 @@ func processOutput(out io.Reader) {
 
 		// Check if the line contains ::set-output::
 		if strings.Contains(line, "::set-output::") {
-			// Extract the key and value
+			// extract the key and value
 			parts := strings.Split(line, "::set-output::")
 			if len(parts) > 1 {
 				keyValue := strings.Split(parts[1], "=")
